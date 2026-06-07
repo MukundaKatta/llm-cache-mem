@@ -293,6 +293,22 @@ def test_decorator_caches_none_return_value():
     assert call_count == 1
 
 
+def test_decorator_none_hit_counts_one_hit_no_miss():
+    c = LRUCache()
+
+    @c.cached()
+    def maybe(x: int) -> int | None:
+        return None
+
+    maybe(0)  # miss + store None
+    c.reset_stats()
+    maybe(0)  # cache hit on stored None
+    s = c.stats()
+    assert s["hits"] == 1
+    assert s["misses"] == 0
+    assert s["hit_ratio"] == pytest.approx(1.0)
+
+
 # ---------- async ----------
 
 
@@ -332,6 +348,24 @@ async def test_async_decorator_key_fn_override():
     await fetch(3)  # key "k:1" - cached
     await fetch(2)  # key "k:0"
     assert len(calls) == 2
+
+
+async def test_async_decorator_caches_none_return_value():
+    c = AsyncLRUCache()
+    call_count = 0
+
+    @c.cached()
+    async def maybe(x: int) -> int | None:
+        nonlocal call_count
+        call_count += 1
+        return None if x == 0 else x
+
+    assert await maybe(0) is None
+    assert await maybe(0) is None  # should NOT re-call
+    assert call_count == 1
+    s = c.stats()
+    assert s["hits"] == 1
+    assert s["misses"] == 1  # first call missed, second hit
 
 
 async def test_async_ttl_expires():

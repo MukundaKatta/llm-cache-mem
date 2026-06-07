@@ -170,19 +170,14 @@ class LRUCache(Generic[T]):
             @wraps(fn)
             def wrapper(*args: Any, **kwargs: Any) -> T:
                 key = kf(*args, **kwargs)
-                hit = self.get(key)
-                if hit is not None:
-                    return hit
-                # Also handle the case where the cached value is exactly None:
-                # `get` would return None for both miss and stored-None. We use
-                # `contains` here to disambiguate without double-counting stats.
-                if self.contains(key):
-                    # rare path: stored None. Re-fetch through get to refresh
-                    # LRU and record a hit. The previous get already counted a
-                    # miss, so adjust counters to keep totals consistent.
-                    with self._lock:
-                        self._misses -= 1
-                    return self.get(key)  # type: ignore[return-value]
+                # `get` returns None for both a miss and a stored-None value,
+                # but it already accounts stats correctly (a stored None is a
+                # hit, an absent key is a miss). Disambiguate the two cases
+                # under one lock so the value and its presence stay consistent.
+                with self._lock:
+                    hit = self.get(key)
+                    if hit is not None or self.contains(key):
+                        return hit  # type: ignore[return-value]
                 value = fn(*args, **kwargs)
                 self.set(key, value)
                 return value
@@ -255,13 +250,14 @@ class AsyncLRUCache(Generic[T]):
             @wraps(fn)
             async def wrapper(*args: Any, **kwargs: Any) -> T:
                 key = kf(*args, **kwargs)
-                hit = inner.get(key)
-                if hit is not None:
-                    return hit
-                if inner.contains(key):
-                    with inner._lock:
-                        inner._misses -= 1
-                    return inner.get(key)  # type: ignore[return-value]
+                # See LRUCache.cached: `get` returns None for both a miss and a
+                # stored-None value but accounts stats correctly. Resolve the
+                # lookup under the lock; only `await` the wrapped fn on a true
+                # miss, outside the lock.
+                with inner._lock:
+                    hit = inner.get(key)
+                    if hit is not None or inner.contains(key):
+                        return hit  # type: ignore[return-value]
                 value = await fn(*args, **kwargs)
                 inner.set(key, value)
                 return value
