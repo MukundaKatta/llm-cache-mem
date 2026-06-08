@@ -375,6 +375,48 @@ async def test_async_ttl_expires():
     assert c.get("k") is None
 
 
+async def test_async_delete_clear_contains():
+    c = AsyncLRUCache(maxsize=5)
+    c.set("k", "v")
+    assert c.contains("k") is True
+    assert c.delete("k") is True
+    assert c.delete("k") is False
+    assert c.contains("k") is False
+    c.set("a", 1)
+    c.set("b", 2)
+    c.clear()
+    assert c.size == 0
+
+
+async def test_async_reset_stats_and_properties():
+    c = AsyncLRUCache(maxsize=7, ttl_seconds=1.5)
+    assert c.maxsize == 7
+    assert c.ttl_seconds == 1.5
+    c.set("a", 1)
+    c.get("a")  # hit
+    c.get("missing")  # miss
+    assert c.stats()["hits"] == 1
+    c.reset_stats()
+    s = c.stats()
+    assert s["hits"] == 0
+    assert s["misses"] == 0
+    assert s["size"] == 1  # entries preserved
+
+
+# ---------- properties ----------
+
+
+def test_maxsize_and_ttl_properties():
+    c = LRUCache(maxsize=42, ttl_seconds=3.0)
+    assert c.maxsize == 42
+    assert c.ttl_seconds == 3.0
+
+
+def test_ttl_seconds_property_none_by_default():
+    c = LRUCache(maxsize=10)
+    assert c.ttl_seconds is None
+
+
 # ---------- concurrency ----------
 
 
